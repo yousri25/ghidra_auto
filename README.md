@@ -2,7 +2,10 @@
 
 A small CLI script that imports a binary into Ghidra, runs the headless analysis, and opens the result in Ghidra. It can also reopen an existing `.gpr` project.
 
-Based on Crypto-Cat's `auto_ghidra.py`, with cleaner formatting, working checksec output, and optional auto-open in CodeBrowser.
+## Credits
+
+Based on [ghidra_auto.py](https://gist.github.com/xHacka/10c22906e0819a8ba3f6e44d7bab2f71) by xHacka,
+which is itself a modified version of [auto_ghidra.py](https://github.com/Crypto-Cat/CTF/blob/main/auto_ghidra.py) by Crypto-Cat.
 
 ## Features
 
