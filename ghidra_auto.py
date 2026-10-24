@@ -3,10 +3,13 @@
 Automatically import + analyze the given binary in Ghidra and open it,
 or open an already created project (.gpr).
 
-Based on Crypto-Cat's auto_ghidra.py (via xHacka's gist), with:
+Based on xHacka's ghidra_auto.py gist
+(https://gist.github.com/xHacka/10c22906e0819a8ba3f6e44d7bab2f71),
+itself a modified version of Crypto-Cat's auto_ghidra.py
+(https://github.com/Crypto-Cat/CTF/blob/main/auto_ghidra.py), with:
   - clean 4-space indentation
   - checksec output actually printed
-  - safe subprocess calls (no shell), error checks, temp project cleanup
+  - safe subprocess calls (no shell) and error checks
   - optional auto-open of the program in CodeBrowser (needs xdotool + X11)
 """
 
@@ -123,11 +126,7 @@ def main(filename, temp, verbose, checksec):
     click.secho("[+] Analysis Complete\n[*] Opening Ghidra...", fg='green')
     click.secho(f"[*] Project Directory: {project_dir}", fg='green')
     click.secho(f"[*] Project File: {project_file}", fg='green')
-    try:
-        start(project_file)
-    finally:
-        if temp:
-            shutil.rmtree(project_dir, ignore_errors=True)
+    start(project_file)
 
 
 if __name__ == '__main__':
