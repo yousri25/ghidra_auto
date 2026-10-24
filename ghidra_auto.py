@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 """
 Automatically import + analyze the given binary in Ghidra and open it,
 or open an already created project (.gpr).
@@ -6,15 +6,17 @@ or open an already created project (.gpr).
 Based on Crypto-Cat's auto_ghidra.py (via xHacka's gist), with:
   - clean 4-space indentation
   - checksec output actually printed
+  - safe subprocess calls (no shell), error checks, temp project cleanup
   - optional auto-open of the program in CodeBrowser (needs xdotool + X11)
 """
 
 import os
 import shutil
+import sys
 import tempfile
 import time
 from pathlib import Path
-from subprocess import check_output, run, Popen
+from subprocess import DEVNULL, Popen, check_output, run
 
 import click
 
@@ -34,20 +36,26 @@ CLICK_X = 90
 CLICK_Y = 110
 
 
-def analyze(project, project_name, filename, verbose):
-    command = f"{ANALYZER} '{project}' '{project_name}' -import '{filename}' -overwrite"
-    if not verbose:
-        command += " >/dev/null"
-    run(command, shell=True)
+def check_ghidra():
+    if not os.path.isfile(ANALYZER):
+        click.secho(f"[-] Ghidra not found at {GHIDRA_PATH}", fg='red')
+        click.secho("    Set it with: export GHIDRA_PATH=/path/to/ghidra/", fg='red')
+        sys.exit(1)
 
 
-def start(project):
+def analyze(project_dir, project_name, filename, verbose):
+    cmd = [ANALYZER, project_dir, project_name, '-import', str(filename), '-overwrite']
+    result = run(cmd, stdout=None if verbose else DEVNULL)
+    return result.returncode == 0
+
+
+def start(project_file):
     """Open the project in Ghidra; try to auto-open the program with xdotool."""
     if not shutil.which('xdotool') or os.environ.get('XDG_SESSION_TYPE') == 'wayland':
-        run([GHIDRA_RUN, project])
+        run([GHIDRA_RUN, project_file])
         return
 
-    proc = Popen([GHIDRA_RUN, project])
+    proc = Popen([GHIDRA_RUN, project_file])
 
     # Wait for the project window to appear
     wid = None
@@ -69,13 +77,9 @@ def start(project):
     proc.wait()
 
 
-def file(filename):  # Run `file` Command
-    return '\t' + ''.join(
-        check_output(["file", filename.absolute()])
-        .decode()
-        .split(': ', maxsplit=1)[1]
-        .replace(', ', '\n\t')
-    ).strip()
+def file_info(filename):
+    out = check_output(['file', '-b', str(filename)]).decode().strip()
+    return '\t' + out.replace(', ', '\n\t')
 
 
 def pwn_checksec(filename):
@@ -83,7 +87,7 @@ def pwn_checksec(filename):
     try:
         run(['pwn', 'checksec', str(filename)], check=True)
     except Exception:
-        click.secho("[-] Checksec Failed...", fg='red')
+        click.secho("[-] Checksec Failed (is pwntools installed?)", fg='red')
     print()
 
 
@@ -94,29 +98,36 @@ def pwn_checksec(filename):
 @click.option('-c', '--checksec', 'checksec', is_flag=True, default=False,
               help="Use pwntools checksec to check securities of binary")
 def main(filename, temp, verbose, checksec):
-    filename = Path(filename.replace(' ', '_'))
-
-    project = f'{Path.cwd()}' if not temp else tempfile.mkdtemp()
-    project = project.replace(' ', '_')
-    project_name = f'{project}/{filename.stem}{GHIDRA_EXTENSION}'
+    check_ghidra()
+    filename = Path(filename).resolve()
 
     if filename.suffix == GHIDRA_EXTENSION:
         click.secho("[+] Project Exists... Opening...", fg="yellow")
-        start(project_name)
+        start(str(filename))
         return
 
-    click.secho(f"[*] File Output:\n{file(filename)}\n", fg='green')
+    project_dir = tempfile.mkdtemp() if temp else str(Path.cwd())
+    project_name = filename.stem.replace(' ', '_')
+    project_file = f'{project_dir}/{project_name}{GHIDRA_EXTENSION}'
+
+    click.secho(f"[*] File Output:\n{file_info(filename)}\n", fg='green')
 
     if checksec:
         pwn_checksec(filename)
 
     click.secho("[*] Running Analysis...", fg='green')
-    analyze(project, filename.stem, filename, verbose)
+    if not analyze(project_dir, project_name, filename, verbose):
+        click.secho("[-] Analysis failed. Re-run with -v to see why.", fg='red')
+        sys.exit(1)
 
     click.secho("[+] Analysis Complete\n[*] Opening Ghidra...", fg='green')
-    click.secho(f"[*] Project Directory: {project}", fg='green')
-    click.secho(f"[*] Project File: {project_name}", fg='green')
-    start(project_name)
+    click.secho(f"[*] Project Directory: {project_dir}", fg='green')
+    click.secho(f"[*] Project File: {project_file}", fg='green')
+    try:
+        start(project_file)
+    finally:
+        if temp:
+            shutil.rmtree(project_dir, ignore_errors=True)
 
 
 if __name__ == '__main__':
